@@ -73,6 +73,7 @@ void *mm_realloc(void *ptr, size_t size);
  * mm_init - initialize the malloc package.
  */
 static char *heap_listp;
+static void *recently_allocated = NULL; 
 int mm_init(void)
 {   
     // 힙 생성과 유효성 검사
@@ -114,47 +115,52 @@ static void *extend_heap(size_t words)
 
 void mm_free(void *bp)
 {
+    // 블록의 사이즈를 읽어들여 저장
     size_t size = GET_SIZE(HDRP(bp));
 
+    // 블록의 헤더와 푸터에 할당되지 않음 상태와 사이즈를 담아줌
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
     coalesce(bp);
 }
 
 static void *coalesce(void *bp)
-{
+{   
+    // 타겟 블록의 직전 블록, 직후 블록의 할당 여부를 저장
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    // 타겟 블록의 사이즈를 저장
     size_t size = GET_SIZE(HDRP(bp));
 
-    // Case 1
+    // Case 1 - 이전 블록과 다음 블록 모두 할당되어 있음
     if (prev_alloc && next_alloc) {
-        return bp;
+        return bp; // 변동 없이 블록의 포인터 리턴
     }
 
-    // Case 2
+    // Case 2 - 이전 블록은 할당되어 있지만, 다음 블록은 할당되지 않음
     else if (prev_alloc && !next_alloc) {
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size, 0));
+        size += GET_SIZE(HDRP(NEXT_BLKP(bp))); // 다음 블록의 사이즈를 확인하여 그만큼 사이즈를 늘려준다.
+        PUT(HDRP(bp), PACK(size, 0)); // 블록의 헤더에 할당되지 않음 상태와 사이즈를 담아줌
+        PUT(FTRP(bp), PACK(size, 0)); // 블록의 푸터에 할당되지 않음 상태와 사이즈를 담아줌
     }
 
-    // Case 3
+    // Case 3 - 이전 블록은 할당되어 있지 않지만, 다음 블록은 할당되어 있음
     else if (!prev_alloc && next_alloc) {
-        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))); // 이전 블록의 사이즈를 확인하여 그만큼 사이즈를 늘려준다.
+        PUT(FTRP(bp), PACK(size, 0)); // 블록의 푸터에 할당되지 않음 상태와 사이즈를 담아줌
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); // 이전 블록의 헤더에 할당되지 않음 상태와 사이즈를 담아줌
+        bp = PREV_BLKP(bp); // 블록의 포인터를 이전 블록으로 옮김
     }
 
-    // Case 4
+    // Case 4 - 이전 블록과 다음 블록 모두 할당되어 있지 않음
     else {
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp))); // 이전 블록과 다음 블록의 사이즈를 더한 값만큼 사이즈를 늘려줌
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0)); // 이전 블록의 헤더에 할당되지 않음 상태와 사이즈를 담아줌
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0)); // 다음 블록의 푸터에 할당되지 않음 상태와 사이즈를 담아줌
+        bp = PREV_BLKP(bp); // 블록의 포인터를 이전 블록으로 옮김
     }
-    return bp;
+    recently_allocated = bp;
+    return bp; // 블록의 포인터를 리턴
 }
 
 /* 
@@ -167,16 +173,20 @@ void *mm_malloc(size_t size)
     size_t extendsize;
     char *bp;
 
+    // 의미없는 사이즈가 들어올시 NULL 리턴
     if (size == 0){return NULL;}
     
+    // 입력받은 사이즈에 따라 헤더와 푸터를 위한 공간을 할당하고, 더블 워드 조건을 만족시킨다.
     if (size <= DSIZE){asize = 2*DSIZE;}
     else{asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);}
 
+    // 할당할 곳을 탐색하고, 성공적으로 찾아냈다면 메모리를 할당해준다.
     if ((bp = find_fit(asize)) != NULL){
         place(bp, asize);
         return bp;
     }
     
+    // 
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL){return NULL;}
     place(bp, asize);
@@ -186,9 +196,24 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize){
     void *bp;
 
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {return bp;}
+    if (recently_allocated == NULL) {
+        recently_allocated = heap_listp;
     }
+
+    for (bp = recently_allocated; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            recently_allocated = bp;
+            return bp;
+            }
+    }
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            recently_allocated = bp;
+            return bp;
+            }
+    }
+
     return NULL;
 }
 
