@@ -45,10 +45,12 @@ team_t team = {
 #define PUT(p, val) (*(unsigned int *)(p) = (val)) // 주소에 word를 씀
 #define GET_SIZE(p) (GET(p) & ~0x7) // 주소의 사이즈를 읽음(블록의 헤더 or 풋터에 있는)
 #define GET_ALLOC(p) (GET(p) & 0x1) // 주소의 할당 비트를 읽음(블록의 헤더 or 풋터에 있는)
-#define HDRP(bp) ((char *)(bp) - WSIZE) // 블록의 주소를 받아, 헤더의 주소를 계산
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) // 블록의 주소를 받아, 풋터의 주소를 계산 
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) // 블록의 주소를 받아, 다음 블록의 주소를 계산
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // 블록의 주소를 받아, 이전 블록의 주소를 계산
+#define HDRP(bp) ((char *)(bp) - 3*WSIZE) // 블록의 주소를 받아, 헤더의 주소를 계산
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - 2*DSIZE) // 블록의 주소를 받아, 풋터의 주소를 계산 
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp))) // 블록의 주소를 받아, 다음 블록의 주소를 계산
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - 2*DSIZE))) // 블록의 주소를 받아, 이전 블록의 주소를 계산
+#define NEXT_FB(bp) *((char *)(bp) - WSIZE) // 다음 가용 가능 블록 주소를 계산 
+#define PREV_FB(bp) *((char *)(bp) - 2*WSIZE) // 이전 가용 가능 블록 주소를 계산
 
 // 함수 원형들
 int mm_init(void);
