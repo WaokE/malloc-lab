@@ -49,8 +49,8 @@ team_t team = {
 #define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - 2*DSIZE) // 블록의 주소를 받아, 풋터의 주소를 계산 
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp))) // 블록의 주소를 받아, 다음 블록의 주소를 계산
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - 2*DSIZE))) // 블록의 주소를 받아, 이전 블록의 주소를 계산
-#define NEXT_FB(bp) *((char *)(bp) - WSIZE) // 다음 가용 가능 블록 주소를 계산 
-#define PREV_FB(bp) *((char *)(bp) - 2*WSIZE) // 이전 가용 가능 블록 주소를 계산
+#define NEXT_FB(bp) ((char *)(bp) - WSIZE) // 블록의 주소를 받아, next 블록 주소 계산 
+#define PREV_FB(bp) ((char *)(bp) - 2*WSIZE) // 블록의 주소를 받아, prev 블록 주소 계산 
 
 // 함수 원형들
 int mm_init(void);
@@ -208,17 +208,23 @@ static void *find_fit(size_t asize){
 
 static void place(void *bp, size_t asize){
     size_t csize = GET_SIZE(HDRP(bp));
+    void *prev_block = GET(PREV_FB(bp));
+    void *next_block = GET(NEXT_FB(bp));
 
-    if ((csize - asize) >= (2*DSIZE)){
+    if ((csize - asize) >= (3*DSIZE)){
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         bp = NEXT_BLKP(bp);
         PUT(HDRP(bp), PACK(csize - asize, 0));
+        PUT(PREV_FB(bp), prev_block);
+        PUT(NEXT_FB(bp), next_block);
         PUT(FTRP(bp), PACK(csize - asize, 0));
     }
     else{
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
+        PUT(PREV_FB(next_block), prev_block);
+        PUT(NEXT_FB(prev_block), next_block);
     }
 }
 
